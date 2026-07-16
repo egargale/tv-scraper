@@ -134,6 +134,11 @@ class BaseStreamer(BaseScraper):
             )
             self._initialize_sessions(websocket_jwt_token)
         except Exception as exc:
+            # Self-clean: if a socket was opened (self.ws assigned) but the
+            # handshake / session init failed, close it before re-raising so a
+            # half-opened socket is never orphaned. ``close()`` is idempotent,
+            # so a later body-level finally is a harmless no-op if it runs.
+            self.close()
             logger.error("Failed to connect to TradingView WebSocket: %s", exc)
             raise RuntimeError(f"WebSocket connection failed: {exc}") from exc
 
@@ -220,44 +225,47 @@ class BaseStreamer(BaseScraper):
             raise RuntimeError(f"Failed to send message '{func}': {exc}") from exc
 
     def receive_packets(self) -> Generator[dict[str, Any], None, None]:
-        """Receive and parse WebSocket data, handling heartbeats."""
+        """Receive and parse WebSocket data, handling heartbeats.
+
+        A pure packet generator: it yields parsed packets until the socket
+        closes and owns **no** lifecycle. The caller's method body owns the
+        socket's ``close()`` (a single owner per call); previously this method
+        closed the socket itself, which distributed the close invariant.
+        """
         if not self.ws:
             raise RuntimeError("WebSocket is not connected. Call connect() first.")
 
-        try:
-            while True:
-                try:
-                    raw_result = self.ws.recv()
-                    result = (
-                        raw_result.decode("utf-8")
-                        if isinstance(raw_result, bytes)
-                        else str(raw_result)
-                    )
+        while True:
+            try:
+                raw_result = self.ws.recv()
+                result = (
+                    raw_result.decode("utf-8")
+                    if isinstance(raw_result, bytes)
+                    else str(raw_result)
+                )
 
-                    # Heartbeat echo
-                    if re.match(r"~m~\d+~m~~h~\d+$", result):
-                        logger.debug("Heartbeat: %s", result)
-                        self.ws.send(result)
-                        continue
-
-                    # Split multiplexed messages
-                    parts = [x for x in re.split(r"~m~\d+~m~", result) if x]
-                    for part in parts:
-                        try:
-                            yield json.loads(part)
-                        except (json.JSONDecodeError, ValueError):
-                            logger.debug("Non-JSON fragment skipped: %s", part[:80])
-
-                except WebSocketConnectionClosedException:
-                    logger.error("WebSocket connection closed.")
-                    break
-                except TimeoutError:
+                # Heartbeat echo
+                if re.match(r"~m~\d+~m~~h~\d+$", result):
+                    logger.debug("Heartbeat: %s", result)
+                    self.ws.send(result)
                     continue
-                except (ConnectionError, OSError) as exc:
-                    logger.error("WebSocket error: %s", exc)
-                    break
-        finally:
-            self.close()
+
+                # Split multiplexed messages
+                parts = [x for x in re.split(r"~m~\d+~m~", result) if x]
+                for part in parts:
+                    try:
+                        yield json.loads(part)
+                    except (json.JSONDecodeError, ValueError):
+                        logger.debug("Non-JSON fragment skipped: %s", part[:80])
+
+            except WebSocketConnectionClosedException:
+                logger.error("WebSocket connection closed.")
+                break
+            except TimeoutError:
+                continue
+            except (ConnectionError, OSError) as exc:
+                logger.error("WebSocket error: %s", exc)
+                break
 
     def close(self) -> None:
         """Close the WebSocket connection."""

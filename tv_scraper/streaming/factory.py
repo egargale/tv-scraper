@@ -1,181 +1,126 @@
-"""Thread-safe streamer factory — fresh instance per call.
+"""Lender streamer factory — a fresh, isolated streamer per ``with`` block.
 
-The SDK's ``CandleStreamer`` and ``ForecastStreamer`` open a fresh WebSocket on
-every call and are **not thread-safe**: ``self.ws`` is shared mutable state that
-concurrent ``connect()`` calls overwrite while a sibling thread is mid-``recv``.
+The streamer classes open a fresh WebSocket on every call and are not
+thread-safe: ``self.ws`` is shared mutable state that concurrent
+``connect()`` calls overwrite while a sibling thread is mid-``recv``.
 
-``StreamerFactory`` guarantees safety with two invariants:
+``StreamerFactory`` is a *lender*: each ``candles()`` / ``forecast()`` call
+returns a context manager that yields a **fresh isolated** streamer and closes
+it on block exit. That gives two guarantees for concurrent consumers:
 
-1. **Fresh instance per call** — every ``get_candles`` / ``get_forecast`` builds
-   a new streamer, so ``self.ws`` is never shared across calls.
-2. **Always closes** — a ``finally`` block calls ``streamer.close()`` even when
-   an exception escapes before ``receive_packets()`` runs (the SDK only closes
-   inside that generator's ``finally``).
+1. **Fresh instance per call** — every ``with`` block gets its own streamer, so
+   ``self.ws`` is never shared across calls.
+2. **Always closes on exit** — the streamer is closed when the block exits,
+   even on an exception or when a realtime generator is abandoned mid-iteration.
 
-Optional ``max_concurrency`` bounds in-flight WebSockets (== file descriptors)
-via a ``threading.BoundedSemaphore`` held across build→fetch→close.
+The streamer classes are themselves leak-free (``connect()`` self-cleans on
+handshake failure; each method body owns its socket's ``close()``). The
+factory's block-exit close is the defense against generator abandonment — the
+SDK pins the socket to a receiver thread (``enable_multithread=True``),
+deferring GC, so prompt close at block exit matters. On the sync happy path
+the factory close is an intentional idempotent no-op (the socket is already
+``None``).
+
+Concurrency bounding is deliberately **not** provided here — it is the
+caller's capacity policy (an async caller uses ``asyncio.Semaphore``; a sync
+caller wraps a lender in ``threading.Semaphore``).
 """
 
 from __future__ import annotations
 
-import threading
-from collections.abc import Generator
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
 
-from tv_scraper.core.validation_data import (
-    EXCHANGE_LITERAL,
-    TIMEFRAME_LITERAL,
-)
 from tv_scraper.streaming.candle_streamer import CandleStreamer
 from tv_scraper.streaming.forecast_streamer import ForecastStreamer
-from tv_scraper.streaming.utils import fetch_available_indicators
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+
+class _Streamable(Protocol):
+    """Structural type for anything the factory can lend."""
+
+    def close(self) -> None: ...
+
+    # CandleStreamer/ForecastStreamer supply get_candles/get_forecast and
+    # stream_realtime_price; only close() is needed for the lender contract.
+
+
+class _Lender:
+    """A context manager that yields a fresh streamer and closes it on exit.
+
+    Acquires nothing. Builds the streamer on ``__enter__`` so an exception
+    before entry can't leak, and closes it in ``__exit__`` — the single place
+    the factory touches the streamer's lifecycle.
+    """
+
+    __slots__ = ("_kwargs", "_streamer", "_streamer_cls")
+
+    def __init__(self, streamer_cls: type[_Streamable], kwargs: dict[str, Any]) -> None:
+        self._streamer_cls = streamer_cls
+        self._kwargs = kwargs
+        self._streamer: _Streamable | None = None
+
+    def __enter__(self) -> _Streamable:
+        self._streamer = self._streamer_cls(**self._kwargs)
+        return self._streamer
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        if self._streamer is not None:
+            self._streamer.close()
 
 
 class StreamerFactory:
-    """Thread-safe factory creating a fresh streamer instance per call.
+    """Lender factory: ``candles()`` / ``forecast()`` return context managers
+    that yield a fresh isolated streamer and close it on block exit.
 
     Args:
         export: Export format — ``"json"`` or ``"csv"``.
             If ``None`` (default), results are not exported.
         cookie: TradingView session cookies for session authentication.
-        max_concurrency: Upper bound on concurrent in-flight calls.
-            ``None`` (default) means unbounded; an ``int`` caps in-flight
-            WebSocket connections across every caller.
+            If not provided, unauthenticated access is used.
 
     Example::
 
-        factory = StreamerFactory(max_concurrency=4)
-        result = factory.get_candles(exchange="BINANCE", symbol="BTCUSDT",
-                                     timeframe="1h", numb_candles=100)
+        factory = StreamerFactory(cookie="...")
+        with factory.candles() as s:
+            result = s.get_candles(exchange="BINANCE", symbol="BTCUSDT",
+                                   timeframe="1h", numb_candles=100)
+
+    For realtime streams, the same lender guarantees prompt close when the
+    generator is abandoned::
+
+        with factory.candles() as s:
+            for tick in s.stream_realtime_price(exchange="BINANCE",
+                                                symbol="BTCUSDT"):
+                ...
     """
 
     def __init__(
         self,
         export: str | None = None,
         cookie: str | None = None,
-        max_concurrency: int | None = None,
     ) -> None:
-        self._export = export
-        self._cookie = cookie
-        self._semaphore: threading.BoundedSemaphore | None
-        if max_concurrency is not None:
-            self._semaphore = threading.BoundedSemaphore(max_concurrency)
-        else:
-            self._semaphore = None
+        self._kwargs: dict[str, Any] = {"export": export, "cookie": cookie}
+        self._candle_streamer_cls: type[_Streamable] = CandleStreamer
+        self._forecast_streamer_cls: type[_Streamable] = ForecastStreamer
 
-    # -- candles -----------------------------------------------------------
+    def candles(self) -> _Lender:
+        """Return a context manager yielding a fresh ``CandleStreamer``.
 
-    def get_candles(
-        self,
-        exchange: EXCHANGE_LITERAL,
-        symbol: str,
-        timeframe: TIMEFRAME_LITERAL = "1m",
-        numb_candles: int = 10,
-        indicators: list[tuple[str, str]] | None = None,
-    ) -> dict[str, Any]:
-        """Fetch OHLCV candles — thread-safe, fresh connection per call.
-
-        Args:
-            exchange: Exchange name (e.g. ``"BINANCE"``).
-            symbol: Symbol name (e.g. ``"BTCUSDT"``).
-            timeframe: Candle timeframe (e.g. ``"1m"``, ``"1h"``, ``"1d"``).
-            numb_candles: Number of candles to retrieve (1-5000).
-            indicators: Optional list of ``(script_id, script_version)`` tuples.
-
-        Returns:
-            Standardized response envelope with
-            ``{"status", "data": {"ohlcv": [...], "indicators": {...}},
-              "metadata", "warnings", "error"}``.
+        The streamer is closed on block exit (normal, exception, or generator
+        abandonment).
         """
-        acquired = self._acquire()
-        streamer = CandleStreamer(export=self._export, cookie=self._cookie)
-        try:
-            return streamer.get_candles(
-                exchange=exchange,
-                symbol=symbol,
-                timeframe=timeframe,
-                numb_candles=numb_candles,
-                indicators=indicators,
-            )
-        finally:
-            streamer.close()
-            if acquired:
-                self._release()
+        return _Lender(self._candle_streamer_cls, self._kwargs)
 
-    # -- forecast ----------------------------------------------------------
+    def forecast(self) -> _Lender:
+        """Return a context manager yielding a fresh ``ForecastStreamer``.
 
-    def get_forecast(
-        self,
-        exchange: EXCHANGE_LITERAL,
-        symbol: str,
-    ) -> dict[str, Any]:
-        """Fetch forecast data — thread-safe, fresh connection per call.
-
-        Args:
-            exchange: Exchange name (e.g. ``"NYSE"``).
-            symbol: Symbol name (e.g. ``"AAPL"``).
-
-        Returns:
-            Standardized response envelope with
-            ``{"status", "data", "metadata", "warnings", "error"}``.
+        The streamer is closed on block exit.
         """
-        acquired = self._acquire()
-        streamer = ForecastStreamer(export=self._export, cookie=self._cookie)
-        try:
-            return streamer.get_forecast(exchange=exchange, symbol=symbol)
-        finally:
-            streamer.close()
-            if acquired:
-                self._release()
-
-    # -- realtime ----------------------------------------------------------
-
-    def stream_realtime_price(
-        self,
-        exchange: EXCHANGE_LITERAL,
-        symbol: str,
-        indicators: list[tuple[str, str]] | None = None,
-    ) -> Generator[dict[str, Any], None, None]:
-        """Yield realtime price updates — holds a permit for the generator's lifetime.
-
-        Args:
-            exchange: Exchange name.
-            symbol: Symbol name.
-            indicators: Optional list of ``(script_id, script_version)`` tuples.
-
-        Yields:
-            Normalised price update dicts.
-        """
-        acquired = self._acquire()
-        streamer = CandleStreamer(export=self._export, cookie=self._cookie)
-        try:
-            yield from streamer.stream_realtime_price(
-                exchange=exchange,
-                symbol=symbol,
-                indicators=indicators,
-            )
-        finally:
-            streamer.close()
-            if acquired:
-                self._release()
-
-    # -- indicators --------------------------------------------------------
-
-    @staticmethod
-    def get_available_indicators() -> dict[str, Any]:
-        """Fetch available built-in indicators (no connection needed)."""
-        return fetch_available_indicators()
-
-    # -- internal ----------------------------------------------------------
-
-    def _acquire(self) -> bool:
-        """Acquire the semaphore if configured. Returns True if acquired."""
-        if self._semaphore is not None:
-            self._semaphore.acquire()
-            return True
-        return False
-
-    def _release(self) -> None:
-        """Release the semaphore if configured."""
-        if self._semaphore is not None:
-            self._semaphore.release()
+        return _Lender(self._forecast_streamer_cls, self._kwargs)

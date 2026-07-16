@@ -7,6 +7,8 @@ and various parameter combinations using mocking - no actual WebSocket connectio
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from tv_scraper.core.constants import STATUS_FAILED, STATUS_SUCCESS
 from tv_scraper.streaming.candle_streamer import CandleStreamer
 
@@ -1020,3 +1022,139 @@ class TestStreamRealtimePrice:
         tick2 = next(gen)
         assert tick2["price"] == 50000.0
         assert tick2["indicators"]["STD;RSI"]["0"] == 55.5
+
+
+class TestSocketLifecycleInvariant:
+    """The streamer must close its WebSocket on every code path.
+
+    These tests encode the leak-fix invariant: if a socket was opened, it is
+    closed — owned by exactly one level per call (the method body), with
+    ``connect()`` cleaning up its own handshake failures. They patch the
+    module-level ``create_connection`` and assert against the mock socket's
+    ``close()`` and the returned response envelope (external behavior, not
+    internals).
+    """
+
+    @patch("tv_scraper.streaming.base_streamer.create_connection")
+    @patch(
+        "tv_scraper.streaming.candle_streamer.CandleStreamer._verify_symbol_exchange"
+    )
+    def test_body_window_subscribe_raises_still_closes_and_returns_envelope(
+        self, mock_validate, mock_cc
+    ):
+        """Window (a): a failure between connect() and receive_packets() must
+        close the socket AND still return a normal error envelope.
+
+        This is the silent-leak path: ``@catch_errors`` swallows the exception
+        into an error response, so without the body owning ``close()`` the
+        socket would leak while the caller sees a normal-looking response.
+        """
+        mock_ws = MagicMock()
+        mock_cc.return_value = mock_ws
+        mock_validate.side_effect = lambda e, s: (e.upper(), s.upper())
+
+        cs = CandleStreamer()
+        with patch.object(cs, "_subscribe_chart", side_effect=RuntimeError("boom")):
+            result = cs.get_candles(
+                exchange="BINANCE", symbol="BTCUSDT", numb_candles=5
+            )
+
+        # The caller still sees a normal error envelope (swallowed by @catch_errors).
+        assert result["status"] == STATUS_FAILED
+        assert "boom" in result["error"]
+        # ...but the socket is now closed (the leak fix).
+        mock_ws.close.assert_called_once()
+
+    @patch("tv_scraper.streaming.base_streamer.create_connection")
+    def test_handshake_window_connect_self_cleans(self, mock_cc):
+        """Window (b): when session init raises AFTER ``self.ws`` is assigned,
+        ``connect()`` closes that socket before re-raising.
+
+        Tested on ``connect()`` directly (not through a decorated fetch method)
+        so we observe both the close AND the propagation — the fetch methods'
+        ``@catch_errors`` swallows the RuntimeError into an error envelope.
+        """
+        mock_ws = MagicMock()
+        mock_cc.return_value = mock_ws
+
+        cs = CandleStreamer(cookie="valid_cookie")
+        with (
+            patch(
+                "tv_scraper.streaming.auth.get_valid_jwt_token", return_value="mock_jwt"
+            ),
+            patch.object(
+                cs, "_initialize_sessions", side_effect=RuntimeError("handshake boom")
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="handshake boom"):
+                cs.connect()
+
+        # The socket assigned in connect() was closed by connect() itself
+        # before re-raising — not orphaned.
+        mock_ws.close.assert_called_once()
+
+    @patch("tv_scraper.streaming.base_streamer.create_connection")
+    @patch(
+        "tv_scraper.streaming.candle_streamer.CandleStreamer._verify_symbol_exchange"
+    )
+    def test_realtime_generator_closes_on_close_after_subscribe_raise(
+        self, mock_validate, mock_cc
+    ):
+        """The realtime generator closes its socket when .close()'d after a
+        subscribe step raised (its ``finally`` runs on generator close).
+        """
+        mock_ws = MagicMock()
+        mock_cc.return_value = mock_ws
+        mock_validate.side_effect = lambda e, s: (e.upper(), s.upper())
+
+        cs = CandleStreamer()
+        with patch.object(
+            cs, "_subscribe_quote", side_effect=RuntimeError("subscribe boom")
+        ):
+            gen = cs.stream_realtime_price(exchange="BINANCE", symbol="BTCUSDT")
+            with pytest.raises(RuntimeError, match="subscribe boom"):
+                next(gen)
+            gen.close()
+
+        mock_ws.close.assert_called_once()
+
+    @patch("tv_scraper.streaming.base_streamer.create_connection")
+    @patch(
+        "tv_scraper.streaming.candle_streamer.CandleStreamer._verify_symbol_exchange"
+    )
+    def test_close_is_idempotent_no_raise(self, mock_validate, mock_cc):
+        """``close()`` is idempotent — calling it twice raises nothing (once by
+        connect() on failure, once by the body)."""
+        mock_ws = MagicMock()
+        mock_cc.return_value = mock_ws
+        mock_validate.side_effect = lambda e, s: (e.upper(), s.upper())
+
+        cs = CandleStreamer()
+        cs.ws = mock_ws
+        cs.close()
+        cs.close()  # must not raise
+        assert cs.ws is None
+        mock_ws.close.assert_called_once()
+
+    @patch("tv_scraper.streaming.base_streamer.create_connection")
+    @patch(
+        "tv_scraper.streaming.candle_streamer.CandleStreamer._verify_symbol_exchange"
+    )
+    def test_socket_closed_on_normal_exhausted_stream(self, mock_validate, mock_cc):
+        """On the happy path (stream runs to exhaustion), the socket still ends
+        up closed — now owned by the method body, not by ``receive_packets()``.
+
+        ``receive_packets()`` is a pure generator (no self-close), yet the
+        socket is closed because ``get_candles`` owns the ``try/finally``.
+        """
+        mock_ws = MagicMock()
+        mock_cc.return_value = mock_ws
+        mock_validate.side_effect = lambda e, s: (e.upper(), s.upper())
+        # No OHLCV data, stream terminated by ConnectionError → STATUS_FAILED,
+        # but the point is the socket is closed regardless of success.
+        mock_ws.recv.side_effect = [ConnectionError("done")]
+
+        cs = CandleStreamer()
+        cs.get_candles(exchange="BINANCE", symbol="BTCUSDT", numb_candles=5)
+
+        mock_ws.close.assert_called()
