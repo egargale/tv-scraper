@@ -482,3 +482,66 @@ class TestStreamerMock:
         result = s.get_candles(exchange="BINANCE", symbol="BTCUSDT", numb_candles=5)
 
         assert "status" in result
+
+
+class TestMockWebSocketClose:
+    """Regression: get_candles() must close its websocket on every path.
+
+    connect() opens a fresh socket per call; receive_packets()'s finally: self.close()
+    only runs on generator GC, which enable_multithread defers. Without an explicit
+    close, each call leaks one fd (→ [Errno 24] Too many open files under polling).
+    """
+
+    @patch("tv_scraper.streaming.base_streamer.create_connection")
+    @patch(
+        "tv_scraper.streaming.candle_streamer.CandleStreamer._verify_symbol_exchange"
+    )
+    def test_closes_websocket_after_success(self, mock_validate, mock_cc):
+        """A successful fetch must close the underlying websocket exactly once."""
+        mock_ws = create_mock_from_fixture("basic_candles")
+        mock_cc.return_value = mock_ws
+        mock_validate.side_effect = lambda e, s: (e.upper(), s.upper())
+
+        cs = CandleStreamer()
+        cs.get_candles(exchange="NASDAQ", symbol="AAPL", numb_candles=5)
+
+        mock_ws.close.assert_called_once()
+
+    @patch("tv_scraper.streaming.base_streamer.create_connection")
+    @patch(
+        "tv_scraper.streaming.candle_streamer.CandleStreamer._verify_symbol_exchange"
+    )
+    def test_closes_websocket_on_error_path(self, mock_validate, mock_cc):
+        """The error/empty-data path must also close the websocket."""
+        mock_ws = MagicMock()
+        mock_ws.recv.side_effect = [ConnectionError("done")]
+        mock_cc.return_value = mock_ws
+        mock_validate.side_effect = lambda e, s: (e.upper(), s.upper())
+
+        cs = CandleStreamer()
+        result = cs.get_candles(exchange="BINANCE", symbol="BTCUSDT", numb_candles=5)
+
+        assert result["status"] == STATUS_FAILED
+        mock_ws.close.assert_called_once()
+
+    @patch("tv_scraper.streaming.base_streamer.create_connection")
+    @patch(
+        "tv_scraper.streaming.candle_streamer.CandleStreamer._verify_symbol_exchange"
+    )
+    def test_closes_websocket_on_exception(self, mock_validate, mock_cc):
+        """An exception mid-fetch must still close the websocket.
+
+        @catch_errors converts the RuntimeError into a failed-status response,
+        but the finally-block must have already closed the socket before that
+        response is returned.
+        """
+        mock_ws = create_mock_from_fixture("basic_candles")
+        mock_cc.return_value = mock_ws
+        mock_validate.side_effect = lambda e, s: (e.upper(), s.upper())
+
+        cs = CandleStreamer()
+        with patch.object(cs, "_subscribe_chart", side_effect=RuntimeError("boom")):
+            result = cs.get_candles(exchange="NASDAQ", symbol="AAPL", numb_candles=5)
+
+        assert result["status"] == STATUS_FAILED
+        mock_ws.close.assert_called_once()

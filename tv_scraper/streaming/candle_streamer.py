@@ -77,66 +77,78 @@ class CandleStreamer(BaseStreamer):
         ind_flag = bool(indicators)
         self.connect()
 
-        self._subscribe_chart(exchange_symbol, timeframe, numb_candles)
-        self._subscribe_quote(exchange_symbol)
+        try:
+            self._subscribe_chart(exchange_symbol, timeframe, numb_candles)
+            self._subscribe_quote(exchange_symbol)
 
-        if ind_flag and indicators:
-            self._add_indicators(indicators)
+            if ind_flag and indicators:
+                self._add_indicators(indicators)
 
-        ohlcv_data: list[dict[str, Any]] = []
-        indicator_data: dict[str, Any] = {}
-        expected_ind_count = len(indicators) if ind_flag and indicators else 0
+            ohlcv_data: list[dict[str, Any]] = []
+            indicator_data: dict[str, Any] = {}
+            expected_ind_count = len(indicators) if ind_flag and indicators else 0
 
-        for i, pkt in enumerate(self.receive_packets()):
-            received_ohlcv = self._extract_ohlcv_from_stream(pkt)
-            if received_ohlcv:
-                ohlcv_data = received_ohlcv
+            for i, pkt in enumerate(self.receive_packets()):
+                received_ohlcv = self._extract_ohlcv_from_stream(pkt)
+                if received_ohlcv:
+                    ohlcv_data = received_ohlcv
 
-            received_ind = self._extract_indicator_from_stream(pkt)
-            if received_ind:
-                indicator_data.update(received_ind)
+                received_ind = self._extract_indicator_from_stream(pkt)
+                if received_ind:
+                    indicator_data.update(received_ind)
 
-            ohlcv_ready = len(ohlcv_data) >= numb_candles
-            ind_ready = not ind_flag or len(indicator_data) >= expected_ind_count
-            if ohlcv_ready and ind_ready:
-                break
-            if i > 15:
-                logger.warning(
-                    "Timeout after %d packets. OHLCV=%d, Indicators=%d",
-                    i,
-                    len(ohlcv_data),
-                    len(indicator_data),
-                )
-                break
+                ohlcv_ready = len(ohlcv_data) >= numb_candles
+                ind_ready = not ind_flag or len(indicator_data) >= expected_ind_count
+                if ohlcv_ready and ind_ready:
+                    break
+                if i > 15:
+                    logger.warning(
+                        "Timeout after %d packets. OHLCV=%d, Indicators=%d",
+                        i,
+                        len(ohlcv_data),
+                        len(indicator_data),
+                    )
+                    break
 
-        ohlcv_data = sorted(ohlcv_data, key=lambda x: x["index"])[-numb_candles:]
-        for name in indicator_data:
-            indicator_data[name] = sorted(
-                indicator_data[name], key=lambda x: x["index"]
-            )[-numb_candles:]
+            ohlcv_data = sorted(ohlcv_data, key=lambda x: x["index"])[-numb_candles:]
+            for name in indicator_data:
+                indicator_data[name] = sorted(
+                    indicator_data[name], key=lambda x: x["index"]
+                )[-numb_candles:]
 
-        if not ohlcv_data:
-            return self._error_response("No OHLCV data received from stream.")
+            if not ohlcv_data:
+                return self._error_response("No OHLCV data received from stream.")
 
-        if ind_flag and indicators:
-            requested_ids = [script_id for script_id, _ in indicators]
-            missing_indicators = [
-                script_id
-                for script_id in requested_ids
-                if script_id not in indicator_data
-            ]
-            if missing_indicators:
-                return self._error_response(
-                    "Failed to fetch indicator data for: "
-                    + ", ".join(missing_indicators)
-                )
+            if ind_flag and indicators:
+                requested_ids = [script_id for script_id, _ in indicators]
+                missing_indicators = [
+                    script_id
+                    for script_id in requested_ids
+                    if script_id not in indicator_data
+                ]
+                if missing_indicators:
+                    return self._error_response(
+                        "Failed to fetch indicator data for: "
+                        + ", ".join(missing_indicators)
+                    )
 
-        result_data = {"ohlcv": ohlcv_data, "indicators": indicator_data}
+            result_data = {"ohlcv": ohlcv_data, "indicators": indicator_data}
 
-        if self.export_result:
-            self._export(result_data, symbol, "get_candles")
+            if self.export_result:
+                self._export(result_data, symbol, "get_candles")
 
-        return self._success_response(result_data)
+            return self._success_response(result_data)
+        finally:
+            # Deterministically close the websocket opened in connect() above.
+            # receive_packets() has its own finally: self.close(), but it is a
+            # generator, so that close only runs when the generator is GC'd —
+            # and create_connection(enable_multithread=True) pins the socket to
+            # a receiver thread that defers that GC. Without this explicit
+            # close, every get_candles() call leaks one file descriptor, which
+            # exhausts the process fd limit under repeated polling and surfaces
+            # as [Errno 24] Too many open files (and, downstream, SSL verify
+            # failures once the trust store can no longer be loaded).
+            self.close()
 
     def stream_realtime_price(
         self,

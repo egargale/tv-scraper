@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-07-16
+
+### Fixed
+- **Streaming**: `CandleStreamer.get_candles()` no longer leaks a websocket file descriptor per call. `connect()` opens a new socket on every invocation, and `receive_packets()`'s `finally: self.close()` only runs when that generator is garbage-collected — which `create_connection(enable_multithread=True)` defers by pinning the socket to a receiver thread. An explicit `try/finally: self.close()` now bounds open fds to one in-flight fetch instead of one-per-call, preventing `[Errno 24] Too many open files` (and downstream SSL verify failures) under repeated polling.
+
 ## [1.5.1] - 2026-05-13
 
 ### Fixed
