@@ -110,7 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Core**: New `http.py` module implementing a centralized `requests.Session` with automatic retry logic (exponential backoff) for improved network reliability.
-- **News Scraper**: Integrated TradingView **News Flow (v2)** API via `get_news()`, introducing advanced categorical filtering (Country, Sector, Corporate Activity, Economic Category, Asset Market) and rich data output. Resolves [#7](https://github.com/smitkunpara/tv-scraper/issues/7).
+- **News Scraper**: Integrated TradingView **News Flow (v2)** API via `get_news()`, introducing advanced categorical filtering (Country, Sector, Corporate Activity, Economic Category, Asset Market) and rich data output. Resolves [#7](https://github.com/egargale/tv-scraper/issues/7).
 - **Streaming**: `BaseStreamer` now catching and raising normalized `RuntimeError` for authentication and connection failures.
 ### Refactor
 - **Scanner Migration**: Migrated 8 modules (`Fundamentals`, `Options`, `Markets`, `Technicals`, `Screener`, `MarketMovers`, `SymbolMarkets`, `Calendar`) to inherit from `ScannerScraper`, eliminating thousands of lines of boilerplate and unifying error handling.
@@ -318,7 +318,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.3.1] - 2026-04-02
 
 ### Changed
-- Related to [#5](https://github.com/smitkunpara/tv-scraper/issues/5): Add index-based filtering support (`symbols`, `filter2` parameters).
+- Related to [#5](https://github.com/egargale/tv-scraper/issues/5): Add index-based filtering support (`symbols`, `filter2` parameters).
 
 ## [1.3.0] - 2026-04-02
 
@@ -497,7 +497,7 @@ This release reintroduces pagination support for the Minds discussions scraper t
 - **Large Limit Handling**: Resolved issues with large limit parameters by implementing proper pagination instead of limiting to first page only
 - **Import Errors**: Fixed pandas-related import failures by deferring import until CSV export is actually needed
 
-**Full Changelog**: [Commits](https://github.com/smitkunpara/tv_scraper/commits/v0.5.2)
+**Full Changelog**: [Commits](https://github.com/egargale/tv_scraper/commits/v0.5.2)
 
 ## [0.5.1] - 2025-12-13
 
@@ -517,7 +517,7 @@ This release focuses on simplifying the Minds community discussions scraper by r
 ### Fixed
 - **Packaging**: Ensured clean package builds by properly excluding development and cache files
 
-**Full Changelog**: [Commits](https://github.com/smitkunpara/tv_scraper/commits/v0.5.1)
+**Full Changelog**: [Commits](https://github.com/egargale/tv_scraper/commits/v0.5.1)
 
 ## [0.5.0] - 2025-12-11
 
@@ -550,7 +550,7 @@ This is a major release marking a significant overhaul of the project structure,
 ### Removed
 - Outdated GitHub workflows for documentation, release, PyPI deployment, and stale issue management.
 
-**Full Changelog**: [Commits](https://github.com/smitkunpara/tv_scraper/commits/v0.4.21)
+**Full Changelog**: [Commits](https://github.com/egargale/tv_scraper/commits/v0.4.21)
 
 ## [0.4.20] - 2025-12-10
 

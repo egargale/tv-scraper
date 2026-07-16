@@ -39,7 +39,7 @@ A comprehensive reference for tv-scraper's architecture, design patterns, and im
 
 ### Install from Source
 ```bash
-git clone https://github.com/smitkunpara/tv-scraper.git
+git clone https://github.com/egargale/tv-scraper.git
 cd tv-scraper
 pip install -e .
 ```

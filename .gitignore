@@ -35,6 +35,14 @@ coverage.xml
 *.py,cover
 htmlcov/
 
+# Coding AI agents
+.pi/
+.claude/
+.cursor/
+.agent/
+.windsurf/
+.github/copilot-instructions.md
+
 # Ruff
 .ruff_cache/
 
@@ -70,6 +78,9 @@ run.py
 docs/_build/
 docs/_static/
 docs/_templates
+
+# Virtual environment
+.venv/
 
 # Environment variables file
 .env

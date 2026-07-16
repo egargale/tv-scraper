@@ -5,7 +5,7 @@ We welcome contributions from the community! This guide will help you get starte
 ## 🚀 Ways to Contribute
 
 ### Code Contributions
-- **Bug Fixes**: Fix issues reported in the [issue tracker](https://github.com/smitkunpara/tv-scraper/issues)
+- **Bug Fixes**: Fix issues reported in the [issue tracker](https://github.com/egargale/tv-scraper/issues)
 - **New Features**: Implement new scraping modules or enhance existing ones
 - **Performance Improvements**: Optimize code for better performance
 - **Documentation**: Improve documentation, add examples, or fix typos
@@ -27,7 +27,7 @@ We welcome contributions from the community! This guide will help you get starte
 
 1. **Fork and Clone the Repository**
    ```bash
-   git clone https://github.com/smitkunpara/tv-scraper.git
+   git clone https://github.com/egargale/tv-scraper.git
    cd tv-scraper
    ```
 
@@ -213,9 +213,9 @@ result = scraper.get_technicals(
 
 ## 📞 Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/smitkunpara/tv-scraper/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/smitkunpara/tv-scraper/discussions)
-- **Documentation**: [Full Documentation](https://smitkunpara.github.io/tv-scraper/)
+- **Issues**: [GitHub Issues](https://github.com/egargale/tv-scraper/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/egargale/tv-scraper/discussions)
+- **Documentation**: [Full Documentation](https://egargale.github.io/tv-scraper/)
 
 ## 📜 Code of Conduct
 

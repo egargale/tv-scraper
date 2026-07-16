@@ -7,7 +7,7 @@ name = "tv-scraper"
 version = "1.5.1"
 description = "A powerful Python library for scraping real-time market data, indicators, and ideas from TradingView."
 authors = [
-    {name = "Smit Kunpara", email = "smitkunpara@gmail.com"}
+    {name = "Egargale", email = "egargale@users.noreply.github.com"}
 ]
 readme = "README.md"
 license = {text = "MIT"}

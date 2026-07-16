@@ -17,7 +17,7 @@ uv add tv-scraper
 For local development:
 
 ```bash
-git clone https://github.com/smitkunpara/tv-scraper.git
+git clone https://github.com/egargale/tv-scraper.git
 cd tv-scraper
 uv sync --extra dev
 ```
