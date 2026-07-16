@@ -77,66 +77,73 @@ class CandleStreamer(BaseStreamer):
         ind_flag = bool(indicators)
         self.connect()
 
-        self._subscribe_chart(exchange_symbol, timeframe, numb_candles)
-        self._subscribe_quote(exchange_symbol)
+        try:
+            self._subscribe_chart(exchange_symbol, timeframe, numb_candles)
+            self._subscribe_quote(exchange_symbol)
 
-        if ind_flag and indicators:
-            self._add_indicators(indicators)
+            if ind_flag and indicators:
+                self._add_indicators(indicators)
 
-        ohlcv_data: list[dict[str, Any]] = []
-        indicator_data: dict[str, Any] = {}
-        expected_ind_count = len(indicators) if ind_flag and indicators else 0
+            ohlcv_data: list[dict[str, Any]] = []
+            indicator_data: dict[str, Any] = {}
+            expected_ind_count = len(indicators) if ind_flag and indicators else 0
 
-        for i, pkt in enumerate(self.receive_packets()):
-            received_ohlcv = self._extract_ohlcv_from_stream(pkt)
-            if received_ohlcv:
-                ohlcv_data = received_ohlcv
+            for i, pkt in enumerate(self.receive_packets()):
+                received_ohlcv = self._extract_ohlcv_from_stream(pkt)
+                if received_ohlcv:
+                    ohlcv_data = received_ohlcv
 
-            received_ind = self._extract_indicator_from_stream(pkt)
-            if received_ind:
-                indicator_data.update(received_ind)
+                received_ind = self._extract_indicator_from_stream(pkt)
+                if received_ind:
+                    indicator_data.update(received_ind)
 
-            ohlcv_ready = len(ohlcv_data) >= numb_candles
-            ind_ready = not ind_flag or len(indicator_data) >= expected_ind_count
-            if ohlcv_ready and ind_ready:
-                break
-            if i > 15:
-                logger.warning(
-                    "Timeout after %d packets. OHLCV=%d, Indicators=%d",
-                    i,
-                    len(ohlcv_data),
-                    len(indicator_data),
-                )
-                break
+                ohlcv_ready = len(ohlcv_data) >= numb_candles
+                ind_ready = not ind_flag or len(indicator_data) >= expected_ind_count
+                if ohlcv_ready and ind_ready:
+                    break
+                if i > 15:
+                    logger.warning(
+                        "Timeout after %d packets. OHLCV=%d, Indicators=%d",
+                        i,
+                        len(ohlcv_data),
+                        len(indicator_data),
+                    )
+                    break
 
-        ohlcv_data = sorted(ohlcv_data, key=lambda x: x["index"])[-numb_candles:]
-        for name in indicator_data:
-            indicator_data[name] = sorted(
-                indicator_data[name], key=lambda x: x["index"]
-            )[-numb_candles:]
+            ohlcv_data = sorted(ohlcv_data, key=lambda x: x["index"])[-numb_candles:]
+            for name in indicator_data:
+                indicator_data[name] = sorted(
+                    indicator_data[name], key=lambda x: x["index"]
+                )[-numb_candles:]
 
-        if not ohlcv_data:
-            return self._error_response("No OHLCV data received from stream.")
+            if not ohlcv_data:
+                return self._error_response("No OHLCV data received from stream.")
 
-        if ind_flag and indicators:
-            requested_ids = [script_id for script_id, _ in indicators]
-            missing_indicators = [
-                script_id
-                for script_id in requested_ids
-                if script_id not in indicator_data
-            ]
-            if missing_indicators:
-                return self._error_response(
-                    "Failed to fetch indicator data for: "
-                    + ", ".join(missing_indicators)
-                )
+            if ind_flag and indicators:
+                requested_ids = [script_id for script_id, _ in indicators]
+                missing_indicators = [
+                    script_id
+                    for script_id in requested_ids
+                    if script_id not in indicator_data
+                ]
+                if missing_indicators:
+                    return self._error_response(
+                        "Failed to fetch indicator data for: "
+                        + ", ".join(missing_indicators)
+                    )
 
-        result_data = {"ohlcv": ohlcv_data, "indicators": indicator_data}
+            result_data = {"ohlcv": ohlcv_data, "indicators": indicator_data}
 
-        if self.export_result:
-            self._export(result_data, symbol, "get_candles")
+            if self.export_result:
+                self._export(result_data, symbol, "get_candles")
 
-        return self._success_response(result_data)
+            return self._success_response(result_data)
+        finally:
+            # Single owner of the socket's close for this call: any failure
+            # between connect() and the packet loop (or a normal return) closes
+            # the socket. ``close()`` is idempotent, so if connect() already
+            # closed on a handshake failure this is a harmless no-op.
+            self.close()
 
     def stream_realtime_price(
         self,
@@ -152,103 +159,109 @@ class CandleStreamer(BaseStreamer):
         ind_flag = bool(indicators)
 
         self.connect()
-        self._subscribe_quote(exchange_symbol)
-        self._subscribe_chart(exchange_symbol, "1m", 300)
+        try:
+            self._subscribe_quote(exchange_symbol)
+            self._subscribe_chart(exchange_symbol, "1m", 300)
 
-        if ind_flag and indicators:
-            self._add_indicators(indicators)
+            if ind_flag and indicators:
+                self._add_indicators(indicators)
 
-        last_price = None
-        latest_indicators: dict[str, Any] = {}
+            last_price = None
+            latest_indicators: dict[str, Any] = {}
 
-        for pkt in self.receive_packets():
-            if pkt.get("m") == "qsd":
-                p_data = pkt.get("p", [])
-                if len(p_data) > 1 and isinstance(p_data[1], dict):
-                    v = p_data[1].get("v", {})
-                    price = v.get("lp")
-                    if price is not None:
-                        last_price = price
-                        yield {
-                            "exchange": v.get("exchange", exchange),
-                            "symbol": v.get("short_name", symbol),
-                            "price": price,
-                            "volume": v.get("volume"),
-                            "change": v.get("ch"),
-                            "change_percent": v.get("chp"),
-                            "high": v.get("high_price"),
-                            "low": v.get("low_price"),
-                            "open": v.get("open_price"),
-                            "prev_close": v.get("prev_close_price"),
-                            "bid": v.get("bid"),
-                            "ask": v.get("ask"),
-                            "indicators": latest_indicators.copy(),
-                        }
+            for pkt in self.receive_packets():
+                if pkt.get("m") == "qsd":
+                    p_data = pkt.get("p", [])
+                    if len(p_data) > 1 and isinstance(p_data[1], dict):
+                        v = p_data[1].get("v", {})
+                        price = v.get("lp")
+                        if price is not None:
+                            last_price = price
+                            yield {
+                                "exchange": v.get("exchange", exchange),
+                                "symbol": v.get("short_name", symbol),
+                                "price": price,
+                                "volume": v.get("volume"),
+                                "change": v.get("ch"),
+                                "change_percent": v.get("chp"),
+                                "high": v.get("high_price"),
+                                "low": v.get("low_price"),
+                                "open": v.get("open_price"),
+                                "prev_close": v.get("prev_close_price"),
+                                "bid": v.get("bid"),
+                                "ask": v.get("ask"),
+                                "indicators": latest_indicators.copy(),
+                            }
 
-            elif pkt.get("m") == "du":
-                p_data = pkt.get("p", [])
-                if len(p_data) > 1 and isinstance(p_data[1], dict):
-                    # Extract indicators if any
-                    current_indicators = self._extract_indicator_from_stream(pkt)
+                elif pkt.get("m") == "du":
+                    p_data = pkt.get("p", [])
+                    if len(p_data) > 1 and isinstance(p_data[1], dict):
+                        # Extract indicators if any
+                        current_indicators = self._extract_indicator_from_stream(pkt)
 
-                    # Update latest indicators with the most recent values
-                    for ind_name, ind_values in current_indicators.items():
-                        if ind_values:
-                            latest_indicators[ind_name] = ind_values[-1]
+                        # Update latest indicators with the most recent values
+                        for ind_name, ind_values in current_indicators.items():
+                            if ind_values:
+                                latest_indicators[ind_name] = ind_values[-1]
 
-                    sds_data = p_data[1].get("sds_1", {})
-                    series = sds_data.get("s", [])
+                        sds_data = p_data[1].get("sds_1", {})
+                        series = sds_data.get("s", [])
 
-                    for entry in series:
-                        if "v" in entry and len(entry["v"]) >= 5:
-                            close_price = entry["v"][4]
-                            volume = entry["v"][5] if len(entry["v"]) > 5 else None
+                        for entry in series:
+                            if "v" in entry and len(entry["v"]) >= 5:
+                                close_price = entry["v"][4]
+                                volume = entry["v"][5] if len(entry["v"]) > 5 else None
 
-                            change = None
-                            change_percent = None
-                            if last_price is not None:
-                                change = close_price - last_price
-                                change_percent = (
-                                    (change / last_price * 100)
-                                    if last_price != 0
-                                    else 0
-                                )
+                                change = None
+                                change_percent = None
+                                if last_price is not None:
+                                    change = close_price - last_price
+                                    change_percent = (
+                                        (change / last_price * 100)
+                                        if last_price != 0
+                                        else 0
+                                    )
 
-                            last_price = close_price
+                                last_price = close_price
 
+                                yield {
+                                    "exchange": exchange,
+                                    "symbol": symbol,
+                                    "price": close_price,
+                                    "volume": volume,
+                                    "change": change,
+                                    "change_percent": change_percent,
+                                    "high": entry["v"][2],
+                                    "low": entry["v"][3],
+                                    "open": entry["v"][1],
+                                    "prev_close": None,
+                                    "bid": None,
+                                    "ask": None,
+                                    "indicators": latest_indicators.copy(),
+                                }
+
+                        if current_indicators and not series:
+                            # Yield just the indicator update if there is no price update in this du packet
                             yield {
                                 "exchange": exchange,
                                 "symbol": symbol,
-                                "price": close_price,
-                                "volume": volume,
-                                "change": change,
-                                "change_percent": change_percent,
-                                "high": entry["v"][2],
-                                "low": entry["v"][3],
-                                "open": entry["v"][1],
+                                "price": last_price,
+                                "volume": None,
+                                "change": None,
+                                "change_percent": None,
+                                "high": None,
+                                "low": None,
+                                "open": None,
                                 "prev_close": None,
                                 "bid": None,
                                 "ask": None,
                                 "indicators": latest_indicators.copy(),
                             }
-
-                    if current_indicators and not series:
-                        # Yield just the indicator update if there is no price update in this du packet
-                        yield {
-                            "exchange": exchange,
-                            "symbol": symbol,
-                            "price": last_price,
-                            "volume": None,
-                            "change": None,
-                            "change_percent": None,
-                            "high": None,
-                            "low": None,
-                            "open": None,
-                            "prev_close": None,
-                            "bid": None,
-                            "ask": None,
-                            "indicators": latest_indicators.copy(),
-                        }
+        finally:
+            # Single owner of the socket's close for this generator: runs on
+            # normal exhaustion, an exception, or generator close()/GC. Covers
+            # the body window that receive_packets() no longer owns.
+            self.close()
 
     @staticmethod
     def get_available_indicators() -> dict[str, Any]:

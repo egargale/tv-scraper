@@ -81,71 +81,77 @@ class ForecastStreamer(BaseStreamer):
 
         self.connect()
 
-        capture_fields = sorted(set(_FORECAST_SOURCE_KEY_MAP.values()))
-        self._send_msg("set_data_quality", ["low"])
-        self._subscribe_quote(exchange_symbol, fields=capture_fields)
+        try:
+            capture_fields = sorted(set(_FORECAST_SOURCE_KEY_MAP.values()))
+            self._send_msg("set_data_quality", ["low"])
+            self._subscribe_quote(exchange_symbol, fields=capture_fields)
 
-        raw_packets: list[dict[str, Any]] = []
-        snapshot: dict[str, Any] = {}
-        required_output_keys = set(_FORECAST_SOURCE_KEY_MAP.keys())
-        found_output_keys: set[str] = set()
-        packet_count = 0
+            raw_packets: list[dict[str, Any]] = []
+            snapshot: dict[str, Any] = {}
+            required_output_keys = set(_FORECAST_SOURCE_KEY_MAP.keys())
+            found_output_keys: set[str] = set()
+            packet_count = 0
 
-        for pkt in self.receive_packets():
-            packet_count += 1
-            raw_packets.append(pkt)
+            for pkt in self.receive_packets():
+                packet_count += 1
+                raw_packets.append(pkt)
 
-            if pkt.get("m") != "qsd":
-                continue
+                if pkt.get("m") != "qsd":
+                    continue
 
-            p_data = pkt.get("p", [])
-            if len(p_data) < 2 or not isinstance(p_data[1], dict):
-                continue
+                p_data = pkt.get("p", [])
+                if len(p_data) < 2 or not isinstance(p_data[1], dict):
+                    continue
 
-            block = p_data[1]
-            values = block.get("v", {})
-            if not isinstance(values, dict):
-                continue
+                block = p_data[1]
+                values = block.get("v", {})
+                if not isinstance(values, dict):
+                    continue
 
-            snapshot.update(values)
-            for out_key, src_key in _FORECAST_SOURCE_KEY_MAP.items():
-                if src_key in snapshot and snapshot[src_key] is not None:
-                    found_output_keys.add(out_key)
+                snapshot.update(values)
+                for out_key, src_key in _FORECAST_SOURCE_KEY_MAP.items():
+                    if src_key in snapshot and snapshot[src_key] is not None:
+                        found_output_keys.add(out_key)
 
-            if required_output_keys.issubset(found_output_keys):
-                break
-            if packet_count > 15:
-                logger.warning(
-                    "get_forecast timeout after %d packets. Found keys: %s",
-                    packet_count,
-                    sorted(found_output_keys),
-                )
-                break
+                if required_output_keys.issubset(found_output_keys):
+                    break
+                if packet_count > 15:
+                    logger.warning(
+                        "get_forecast timeout after %d packets. Found keys: %s",
+                        packet_count,
+                        sorted(found_output_keys),
+                    )
+                    break
 
-        cleaned_data = {
-            out_key: snapshot.get(src_key)
-            for out_key, src_key in _FORECAST_SOURCE_KEY_MAP.items()
-        }
-        available_output_keys = [k for k, v in cleaned_data.items() if v is not None]
+            cleaned_data = {
+                out_key: snapshot.get(src_key)
+                for out_key, src_key in _FORECAST_SOURCE_KEY_MAP.items()
+            }
+            available_output_keys = [
+                k for k, v in cleaned_data.items() if v is not None
+            ]
 
-        missing_output_keys = sorted(
-            required_output_keys.difference(available_output_keys)
-        )
-
-        if missing_output_keys:
-            return self._error_response(
-                "failed to fetch keys: " + ", ".join(missing_output_keys),
-                data=cleaned_data,
-                available_output_keys=sorted(available_output_keys),
+            missing_output_keys = sorted(
+                required_output_keys.difference(available_output_keys)
             )
 
-        if self.export_result:
-            self._export(cleaned_data, symbol, "forecast")
+            if missing_output_keys:
+                return self._error_response(
+                    "failed to fetch keys: " + ", ".join(missing_output_keys),
+                    data=cleaned_data,
+                    available_output_keys=sorted(available_output_keys),
+                )
 
-        return self._success_response(
-            cleaned_data,
-            available_output_keys=sorted(available_output_keys),
-        )
+            if self.export_result:
+                self._export(cleaned_data, symbol, "forecast")
+
+            return self._success_response(
+                cleaned_data,
+                available_output_keys=sorted(available_output_keys),
+            )
+        finally:
+            # Single owner of the socket's close for this call.
+            self.close()
 
     def _get_symbol_type(self, exchange_symbol: str) -> str | None:
         """Fetch the symbol type (e.g. 'stock', 'crypto', 'spot') from TradingView scanner."""
