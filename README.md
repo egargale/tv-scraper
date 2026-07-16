@@ -1,7 +1,7 @@
 # TV Scraper
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![MIT License](https://img.shields.io/github/license/smitkunpara/tv-scraper.svg?color=brightgreen)](https://opensource.org/licenses/MIT)
+[![MIT License](https://img.shields.io/github/license/egargale/tv-scraper.svg?color=brightgreen)](https://opensource.org/licenses/MIT)
 
 **A high-performance Python library for extracting real-time financial data, technical indicators, and social insights from TradingView.**
 
@@ -10,25 +10,25 @@
 ## ✨ Features
 
 ### 📡 Real-Time Streaming
-- **🕯️ Candle + Indicators**: Stream live OHLCV candles with built-in or custom Pine indicators via [`CandleStreamer`](https://smitkunpara.github.io/tv-scraper/latest/streaming/candle_streamer/).
-- **⚡ Real-time Pricing**: Persistent WebSocket connection for millisecond-accurate price updates via [`stream_realtime_price`](https://smitkunpara.github.io/tv-scraper/latest/streaming/candle_streamer/#realtime-prices) in `CandleStreamer`.
-- **📊 Analyst Forecasts**: Capture analyst price targets, EPS, and revenue estimates for stocks via [`ForecastStreamer`](https://smitkunpara.github.io/tv-scraper/latest/streaming/forecast_streamer/).
+- **🕯️ Candle + Indicators**: Stream live OHLCV candles with built-in or custom Pine indicators via [`CandleStreamer`](https://egargale.github.io/tv-scraper/latest/streaming/candle_streamer/).
+- **⚡ Real-time Pricing**: Persistent WebSocket connection for millisecond-accurate price updates via [`stream_realtime_price`](https://egargale.github.io/tv-scraper/latest/streaming/candle_streamer/#realtime-prices) in `CandleStreamer`.
+- **📊 Analyst Forecasts**: Capture analyst price targets, EPS, and revenue estimates for stocks via [`ForecastStreamer`](https://egargale.github.io/tv-scraper/latest/streaming/forecast_streamer/).
 
 ### 📉 Financial & Technical Data
-- **🧩 Technical Analysis**: Access RSI, MACD, EMAs, and 100+ other indicators via [`Technicals`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/technicals/).
-- **🏛️ Fundamentals**: Comprehensive financial statements, ratios, and balance sheets via [`Fundamentals`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/fundamentals/).
-- **⛓️ Options Data**: Retrieve full option chains, Greeks, IV, and theoretical prices via [`Options`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/options/).
-- **📅 Events Calendar**: Track Earnings, Dividends, IPOs, and Economic events via [`Calendar`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/calendar/).
+- **🧩 Technical Analysis**: Access RSI, MACD, EMAs, and 100+ other indicators via [`Technicals`](https://egargale.github.io/tv-scraper/latest/scrapers/technicals/).
+- **🏛️ Fundamentals**: Comprehensive financial statements, ratios, and balance sheets via [`Fundamentals`](https://egargale.github.io/tv-scraper/latest/scrapers/fundamentals/).
+- **⛓️ Options Data**: Retrieve full option chains, Greeks, IV, and theoretical prices via [`Options`](https://egargale.github.io/tv-scraper/latest/scrapers/options/).
+- **📅 Events Calendar**: Track Earnings, Dividends, IPOs, and Economic events via [`Calendar`](https://egargale.github.io/tv-scraper/latest/scrapers/calendar/).
 
 ### 🔍 Discovery & Screening
-- **🔎 Screener**: Run advanced market scans with custom filters across 50+ countries via [`Screener`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/screener/).
-- **🏁 Market Movers**: Track top gainers, losers, and most active stocks via [`Market Movers`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/market_movers/).
-- **🌍 Global Markets**: Discover symbols across exchanges and asset classes via [`Markets`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/markets/).
+- **🔎 Screener**: Run advanced market scans with custom filters across 50+ countries via [`Screener`](https://egargale.github.io/tv-scraper/latest/scrapers/screener/).
+- **🏁 Market Movers**: Track top gainers, losers, and most active stocks via [`Market Movers`](https://egargale.github.io/tv-scraper/latest/scrapers/market_movers/).
+- **🌍 Global Markets**: Discover symbols across exchanges and asset classes via [`Markets`](https://egargale.github.io/tv-scraper/latest/scrapers/markets/).
 
 ### 🤝 Social & Community
-- **💡 Trading Ideas**: Scrape community-driven trading setups and technical ideas via [`Ideas`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/ideas/).
-- **🧠 Heads-up (Minds)**: Access real-time discussions and community posts via [`Minds`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/minds/).
-- **📰 News Feed**: Integrated news stream with granular filters by symbol or region via [`News`](https://smitkunpara.github.io/tv-scraper/latest/scrapers/news/).
+- **💡 Trading Ideas**: Scrape community-driven trading setups and technical ideas via [`Ideas`](https://egargale.github.io/tv-scraper/latest/scrapers/ideas/).
+- **🧠 Heads-up (Minds)**: Access real-time discussions and community posts via [`Minds`](https://egargale.github.io/tv-scraper/latest/scrapers/minds/).
+- **📰 News Feed**: Integrated news stream with granular filters by symbol or region via [`News`](https://egargale.github.io/tv-scraper/latest/scrapers/news/).
 
 ---
 
@@ -69,22 +69,22 @@ for tick in price_stream:
 
 For complete documentation, installation guides, and API references, visit:
 
-**[📖 Full Documentation](https://smitkunpara.github.io/tv-scraper/latest/)**
+**[📖 Full Documentation](https://egargale.github.io/tv-scraper/latest/)**
 
 ### Key Resource Links
-- [🚀 Quick Start Guide](https://smitkunpara.github.io/tv-scraper/latest/getting-started/)
-- [📦 Installation](https://smitkunpara.github.io/tv-scraper/latest/getting-started/#install)
-- [📊 Supported Exchanges & Metrics](https://smitkunpara.github.io/tv-scraper/latest/supported_data/)
-- [📋 API Conventions](https://smitkunpara.github.io/tv-scraper/latest/api-conventions/)
+- [🚀 Quick Start Guide](https://egargale.github.io/tv-scraper/latest/getting-started/)
+- [📦 Installation](https://egargale.github.io/tv-scraper/latest/getting-started/#install)
+- [📊 Supported Exchanges & Metrics](https://egargale.github.io/tv-scraper/latest/supported_data/)
+- [📋 API Conventions](https://egargale.github.io/tv-scraper/latest/api-conventions/)
 
 ---
 
 ## 🛠️ Development & Contributing
 
-We welcome contributions! Please see our [Contributing Guide](https://smitkunpara.github.io/tv-scraper/latest/contributing/) for details.
+We welcome contributions! Please see our [Contributing Guide](https://egargale.github.io/tv-scraper/latest/contributing/) for details.
 
-- **🐛 Bug Reports**: [Open an issue](https://github.com/smitkunpara/tv-scraper/issues)
-- **💡 Feature Requests**: [Start a discussion](https://github.com/smitkunpara/tv-scraper/discussions)
+- **🐛 Bug Reports**: [Open an issue](https://github.com/egargale/tv-scraper/issues)
+- **💡 Feature Requests**: [Start a discussion](https://github.com/egargale/tv-scraper/discussions)
 
 ---
 
