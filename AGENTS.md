@@ -1270,3 +1270,19 @@ See [docs/contributing.md](docs/contributing.md) for:
 - Unit test coverage for new features, including edge case verification
 - No breaking changes to response envelope
 - Live API tests pass (TradingView connection required)
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+GitHub issues (`gh` CLI). External PRs are **not** a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Defaults: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
