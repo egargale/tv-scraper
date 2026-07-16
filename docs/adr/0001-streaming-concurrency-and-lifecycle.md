@@ -73,7 +73,7 @@ Mirror methods make the factory's surface track the streamer's 1:1 (shallow) and
 
 ## Out of scope
 
-- Consumer-side cleanup: after Part 1 lands, the consumer repo's `TvScraperClient._close_safely` becomes redundant-but-harmless — a separate consumer-repo change.
+- Consumer-side cleanup: Part 1 landed in this repo (#4), so the consumer repo's `TvScraperClient._close_safely` is now redundant-but-harmless — removing it is a separate consumer-repo change.
 - Migrating the consumer to use `StreamerFactory`.
 - A sync concurrency bound *inside* the library — the caller wraps the lender in its own `threading.Semaphore`.
 - Changing the realtime generator's return type to own the receiver-thread lifecycle.
